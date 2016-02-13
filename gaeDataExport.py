@@ -23,6 +23,7 @@ def getDirs():
     output_dir = sys.argv[2]
     print 'using input directory:', input_dir
     print 'using output directory:', output_dir
+    print ''
     return input_dir, output_dir
 
 def extractTableName(path):
@@ -42,6 +43,11 @@ def listFiles(directory):
             list.append((root, table_name, valid_files))
     return list
 
+def encode(val):
+    if type(val) is unicode:
+        return val.encode('utf-8', errors = 'replace')
+    return str(val)
+
 def parseHeaderFields(entity):
     return [field for field in entity]
 
@@ -51,7 +57,13 @@ def entity2csvRow(entity_fields, entity):
         value = entity[field]
         if value is None:
             value = ''
-        row.append(str(value))
+        try:
+            row.append(encode(value))
+        except Exception as e:
+            print e
+            print 'Entity:'
+            print entity
+            sys.exit(1)
     return ",".join(row)
 
 def process(output_dir, table_tuple, writeFn):
@@ -60,6 +72,7 @@ def process(output_dir, table_tuple, writeFn):
     filenames = table_tuple[2]
     header_list = None
 
+    count = 0
     # open file for writing
     with open(join(output_dir, table_name), 'w') as write_file:
         # read files, process, and write
@@ -72,13 +85,21 @@ def process(output_dir, table_tuple, writeFn):
                     entity = datastore.Entity.FromPb(entity_proto)
                     if header_list is None:
                         header_list = parseHeaderFields(entity)
-                        writeFn(write_file, ",".join(header_list))
+                        writeFn(write_file, encode(",".join(header_list)))
                     csv_row = entity2csvRow(header_list, entity)
                     writeFn(write_file, csv_row)
+                    count+=1
+    return count
 
 def write(write_file, row):
-    print 'writing row:', row
-    write_file.write(row)
+    #print 'writing row:', row
+    try:
+        write_file.write(row)
+    except Exception as e:
+        print e
+        print 'Row:'
+        print row
+        sys.exit(1)
     write_file.write('\n')
 
 def main():
@@ -86,7 +107,11 @@ def main():
     table_list = listFiles(input_dir)
     # perform the passed in write action (function) for each csv row
     for table_tuple in table_list:
-        process(output_dir, table_tuple, write)
+        table_name = table_tuple[1]
+        print 'Converting objects of type ' + table_name + ' to CSV files...'
+        object_count = process(output_dir, table_tuple, write)
+        print '    ...finished converting ' + str(object_count) + ' objects of type ' + table_name + ' to CSV files'
+    print 'Finished Successfully!'
 
 if __name__ == "__main__":
     main()
