@@ -10,6 +10,8 @@ from os.path import join
 import re
 import csv
 import traceback
+import time
+import copy
 
 # import Google App Engine api
 sys.path.append('/usr/local/google_appengine')
@@ -63,11 +65,35 @@ def entity2csvRow(entity_fields, entity):
         row.append(value)
     return row
 
-def process(output_dir, table_tuple, writeFn):
+class TimeCapture(object):
+    def __init__(self, init_time):
+        self.init_time = init_time
+        self.start_time = init_time
+        self.end_time = None
+        self.run_time = None
+        self.total_time = None
+        self.count = None
+        self.ms_per_obj = None
+
+    def start(self):
+        self.start_time = time.time()
+
+    def end(self, count):
+        self.end_time = time.time()
+        self.run_time = self.end_time - self.start_time
+        self.count = count
+        self.ms_per_obj = self.run_time * 1000 / count
+        self.total_time = self.end_time - self.init_time
+
+
+def process(output_dir, time_capture, table_tuple, writeFn):
     root = table_tuple[0]
     table_name = table_tuple[1]
     filenames = table_tuple[2]
     header_list = None
+
+    print 'Converting ' + table_name + ' to a CSV file...'
+    time_capture.start()
 
     count = 0
     # open file for writing
@@ -87,7 +113,9 @@ def process(output_dir, table_tuple, writeFn):
                     csv_row = entity2csvRow(header_list, entity)
                     writeFn(write_file, entity, csv_row)
                     count+=1
-    return count
+    time_capture.end(count)
+    print '    ...converted {count:d} objects in {run_time:.2f} seconds | {ms_per_obj:.2f} ms/obj | total time = {total_time:.2f} seconds\n'.format(count=count, run_time=time_capture.run_time, ms_per_obj=time_capture.ms_per_obj, total_time=time_capture.total_time)
+    return time_capture
 
 def write(write_file, entity, row):
     row = [encode(r) for r in row]
@@ -101,16 +129,26 @@ def write(write_file, entity, row):
         print entity
         sys.exit(1)
 
+def displayResults(results, total_time):
+    types = len(results)
+    total_count = sum([result.count for result in results])
+    total_run_time = sum([result.run_time for result in results])
+    avg_ms_per_obj = total_run_time * 1000 / total_count
+    print 'Converted {types:d} types with a total of {count:d} objects | total running time = {run:.2f} seconds | {rate:.2f} ms/obj | total time = {total:.2f} seconds'.format(types=types, count=total_count, run=total_run_time, rate=avg_ms_per_obj, total=total_time)
+
 def main():
     input_dir, output_dir = getDirs()
     table_list = listFiles(input_dir)
     # perform the passed in write action (function) for each csv row
+    results = []
+    time_capture = TimeCapture(time.time())
     for table_tuple in table_list:
-        table_name = table_tuple[1]
-        print 'Converting objects of type ' + table_name + ' to a CSV file...'
-        object_count = process(output_dir, table_tuple, write)
-        print '    ...finished converting ' + str(object_count) + ' objects of type ' + table_name + ' to a CSV file'
+        result = process(output_dir, copy.deepcopy(time_capture), table_tuple, write)
+        results.append(result)
+    time_capture.end(1)
+
     print 'Finished Successfully!'
+    displayResults(results, time_capture.total_time)
 
 if __name__ == "__main__":
     main()
