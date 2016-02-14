@@ -8,12 +8,15 @@ import sys
 import os
 from os.path import join
 import re
+import csv
+import traceback
 
 # import Google App Engine api
 sys.path.append('/usr/local/google_appengine')
 from google.appengine.api.files import records
 from google.appengine.datastore import entity_pb
 from google.appengine.api import datastore
+from google.appengine.api import datastore_types
 
 def getDirs():
     if len(sys.argv) < 3:
@@ -39,12 +42,11 @@ def listFiles(directory):
         valid_files = [f for f in files if not f.endswith('info')]
         if len(valid_files) != 0:
             table_name = extractTableName(root)
-            #print 'files in ' + table_name + ': ' + ",".join(valid_files)
             list.append((root, table_name, valid_files))
     return list
 
 def encode(val):
-    if type(val) is unicode:
+    if type(val) is unicode or type(val) is datastore_types.Text:
         return val.encode('utf-8', errors = 'replace')
     return str(val)
 
@@ -54,17 +56,12 @@ def parseHeaderFields(entity):
 def entity2csvRow(entity_fields, entity):
     row = []
     for field in entity_fields:
-        value = entity[field]
-        if value is None:
+        if field in entity:
+            value = entity[field] or ''
+        else:
             value = ''
-        try:
-            row.append(encode(value))
-        except Exception as e:
-            print e
-            print 'Entity:'
-            print entity
-            sys.exit(1)
-    return ",".join(row)
+        row.append(value)
+    return row
 
 def process(output_dir, table_tuple, writeFn):
     root = table_tuple[0]
@@ -74,7 +71,8 @@ def process(output_dir, table_tuple, writeFn):
 
     count = 0
     # open file for writing
-    with open(join(output_dir, table_name), 'w') as write_file:
+    with open(join(output_dir, table_name + '.csv'), 'w') as write_file:
+        write_file = csv.writer(write_file)
         # read files, process, and write
         for filename in filenames:
             path = join(root, filename)
@@ -85,22 +83,23 @@ def process(output_dir, table_tuple, writeFn):
                     entity = datastore.Entity.FromPb(entity_proto)
                     if header_list is None:
                         header_list = parseHeaderFields(entity)
-                        writeFn(write_file, encode(",".join(header_list)))
+                        writeFn(write_file, entity, header_list)
                     csv_row = entity2csvRow(header_list, entity)
-                    writeFn(write_file, csv_row)
+                    writeFn(write_file, entity, csv_row)
                     count+=1
     return count
 
-def write(write_file, row):
-    #print 'writing row:', row
+def write(write_file, entity, row):
+    row = [encode(r) for r in row]
     try:
-        write_file.write(row)
-    except Exception as e:
-        print e
+        write_file.writerow(row)
+    except:
+        traceback.print_exc()
         print 'Row:'
         print row
+        print 'Entity:'
+        print entity
         sys.exit(1)
-    write_file.write('\n')
 
 def main():
     input_dir, output_dir = getDirs()
@@ -108,9 +107,9 @@ def main():
     # perform the passed in write action (function) for each csv row
     for table_tuple in table_list:
         table_name = table_tuple[1]
-        print 'Converting objects of type ' + table_name + ' to CSV files...'
+        print 'Converting objects of type ' + table_name + ' to a CSV file...'
         object_count = process(output_dir, table_tuple, write)
-        print '    ...finished converting ' + str(object_count) + ' objects of type ' + table_name + ' to CSV files'
+        print '    ...finished converting ' + str(object_count) + ' objects of type ' + table_name + ' to a CSV file'
     print 'Finished Successfully!'
 
 if __name__ == "__main__":
