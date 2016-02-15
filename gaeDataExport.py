@@ -12,6 +12,10 @@ import csv
 import traceback
 import time
 import copy
+from multiprocessing import Pool
+from multiprocessing import cpu_count
+from itertools import izip
+from itertools import repeat
 
 # import Google App Engine api
 sys.path.append('/usr/local/google_appengine')
@@ -114,8 +118,11 @@ def process(output_dir, time_capture, table_tuple, writeFn):
                     writeFn(write_file, entity, csv_row)
                     count+=1
     time_capture.end(count)
-    print '    ...converted {count:d} objects in {run_time:.2f} seconds | {ms_per_obj:.2f} ms/obj | total time = {total_time:.2f} seconds\n'.format(count=count, run_time=time_capture.run_time, ms_per_obj=time_capture.ms_per_obj, total_time=time_capture.total_time)
+    print '    ...converted {count:d} objects of type {obj_type} in {run_time:.2f} seconds | {ms_per_obj:.2f} ms/obj | total time = {total_time:.2f} seconds'.format(count=count, obj_type=table_name, run_time=time_capture.run_time, ms_per_obj=time_capture.ms_per_obj, total_time=time_capture.total_time)
     return time_capture
+
+def multiprocess(input):
+    return process(*input)
 
 def write(write_file, entity, row):
     row = [encode(r) for r in row]
@@ -139,13 +146,23 @@ def displayResults(results, total_time):
 def main():
     input_dir, output_dir = getDirs()
     table_list = listFiles(input_dir)
+
+    concurrency = cpu_count()
+    print 'Using {0:d} Processes'.format(concurrency)
+    pool = Pool(concurrency)
+
     # perform the passed in write action (function) for each csv row
-    results = []
     time_capture = TimeCapture(time.time())
-    for table_tuple in table_list:
-        result = process(output_dir, copy.deepcopy(time_capture), table_tuple, write)
-        results.append(result)
+    results = pool.map(
+        multiprocess,
+        izip(repeat(output_dir),
+            [copy.deepcopy(time_capture) for i in range(len(table_list))],
+            table_list,
+            repeat(write)))
     time_capture.end(1)
+   
+    pool.close()
+    pool.join()
 
     print 'Finished Successfully!'
     displayResults(results, time_capture.total_time)
