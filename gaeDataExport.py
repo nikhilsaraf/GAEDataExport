@@ -23,6 +23,9 @@ from google.appengine.api.files import records
 from google.appengine.datastore import entity_pb
 from google.appengine.api import datastore
 from google.appengine.api import datastore_types
+from google.appengine.ext.db import BadKeyError
+
+key_regex = 'ah[^\s]{20,}'
 
 def getDirs():
     if len(sys.argv) < 3:
@@ -51,20 +54,42 @@ def listFiles(directory):
             list.append((root, table_name, valid_files))
     return list
 
+def decodeStringKey(value):
+    # first try to decode the whole string as one key
+    try:
+        key = datastore_types.Key(value)
+        return encode(key)
+    except BadKeyError as e:
+        # check for the case of two keys split by a '_'
+        if re.search('^' + key_regex + '_' + key_regex + '$', value):
+            keys = value.split('_ah')
+            return encode(keys[0]) + '_' + encode('ah' + keys[1])
+        # check for the case of one key and one string split by a '_'
+        if re.search('^' + key_regex + '_[^\s]+$', value):
+            strings = value.split('_')
+            # one key and one string
+            if len(strings) == 2:
+                return encode(strings[0]) + '_' + encode(strings[1])
+            # one key (which includes a '_') and one string
+            elif len(strings) == 3:
+                return encode('_'.join(strings[0:2])) + '_' + encode(strings[2])
+        raise Exception('bad key string: ' + str(value), e)
+
 def encode(value):
     if value is None:
         return ''
 
-    # if it's a string representation of a Key, convert to a key
-    if type(value) is str and re.search('^ah[^\s]{25,}$', value):
-        value = datastore_types.Key(value)
-    # recursively encode all Keys
-    if type(value) is datastore_types.Key:
-        return encode(value.kind()) + '___' + encode(value.id_or_name())
-
-    # case of complicated unicode or Text objects
+    # convert unicode to simpler string
     if type(value) is unicode or type(value) is datastore_types.Text:
-        return value.encode('utf-8', errors = 'replace')
+        value = value.encode('utf-8', errors = 'replace')
+
+    if type(value) is datastore_types.Key:
+        return encode(value.kind()) + '@' + encode(value.id_or_name())
+
+    # if it's a string representation of a Key, recursively encode it
+    if type(value) is str and re.search('^' + key_regex + '$', value):
+        return decodeStringKey(value)
+
     # simple case
     return str(value)
 
