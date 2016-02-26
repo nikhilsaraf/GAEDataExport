@@ -51,21 +51,34 @@ def listFiles(directory):
             list.append((root, table_name, valid_files))
     return list
 
-def encode(val):
-    if type(val) is unicode or type(val) is datastore_types.Text:
-        return val.encode('utf-8', errors = 'replace')
-    return str(val)
+def encode(value):
+    if value is None:
+        return ''
+
+    # if it's a string representation of a Key, convert to a key
+    if type(value) is str and re.search('^ah[^\s]{25,}$', value):
+        value = datastore_types.Key(value)
+    # recursively encode all Keys
+    if type(value) is datastore_types.Key:
+        return encode(value.kind()) + '___' + encode(value.id_or_name())
+
+    # case of complicated unicode or Text objects
+    if type(value) is unicode or type(value) is datastore_types.Text:
+        return value.encode('utf-8', errors = 'replace')
+    # simple case
+    return str(value)
 
 def parseHeaderFields(entity):
     return [field for field in entity]
 
 def entity2csvRow(entity_fields, entity):
     row = []
+    # always save entity's key first
+    row.append(entity.key())
     for field in entity_fields:
+        value = None
         if field in entity:
-            value = entity[field] or ''
-        else:
-            value = ''
+            value = entity[field]
         row.append(value)
     return row
 
@@ -113,7 +126,9 @@ def process(output_dir, time_capture, table_tuple, writeFn):
                     entity = datastore.Entity.FromPb(entity_proto)
                     if header_list is None:
                         header_list = parseHeaderFields(entity)
-                        writeFn(write_file, entity, header_list)
+                        display_header_list = ['key']
+                        display_header_list.extend(header_list)
+                        writeFn(write_file, entity, display_header_list)
                     csv_row = entity2csvRow(header_list, entity)
                     writeFn(write_file, entity, csv_row)
                     count+=1
