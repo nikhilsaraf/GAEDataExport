@@ -2,6 +2,7 @@
 
 #
 # Reads data from a Google App Engine backup and exports it to a CSV file
+# to stop all process
 # kill -TERM -$(pgrep -o python)
 #
 
@@ -144,43 +145,39 @@ def process(output_dir, time_capture, table_tuple, writeFn):
         write_file = csv.writer(write_file)
         # read files, process, and write
         #print 'filenames',filenames
-        print "______________________ extract for ", table_name, ' ______________'
+        #print "______________________ extract for ", table_name, ' ______________'
         header_list = []
         display_header_list = ['key']
         for filename in filenames:
             path = join(root, filename)
-            if table_name == 'palette':
-                with open(path, 'r') as raw_file:
-                    reader1 = records.RecordsReader(raw_file)
-                    for record in reader1:
-                        entity_proto1 = entity_pb.EntityProto(contents=record)
-                        entity1 = datastore.Entity.FromPb(entity_proto1)
-                        headers = parseHeaderFields(entity1)
-                        for header in headers:
-                            if len(headers) > len(header_list):
-                                header_list = headers
-                                print 'header_list=',header_list
+            with open(path, 'r') as raw_file:
+                reader1 = records.RecordsReader(raw_file)
+                for record in reader1:
+                    entity_proto1 = entity_pb.EntityProto(contents=record)
+                    entity1 = datastore.Entity.FromPb(entity_proto1)
+                    headers = parseHeaderFields(entity1)
+                    for header in headers:
+                        if len(headers) > len(header_list):
+                            header_list = headers
+                            #print 'header_list=',header_list
         display_header_list.extend(header_list)
-        print "header_list", header_list
+        #print "header_list", header_list
         writeFn(write_file, None, display_header_list)
         for filename in filenames:
             path = join(root, filename)
-            if table_name != 'debug':
-                with open(path, 'r') as raw_file:
-                    reader = records.RecordsReader(raw_file)
-                    for record in reader:
-                        entity_proto = entity_pb.EntityProto(contents=record)
-                        entity = datastore.Entity.FromPb(entity_proto)
-                        if header_list is None:
-                            header_list = parseHeaderFields(entity)
-                            display_header_list = ['key']
-                            display_header_list.extend(header_list)
-                            writeFn(write_file, entity, display_header_list)
-                        csv_row = entity2csvRow(header_list, entity)
-                        writeFn(write_file, entity, csv_row)
-                        count+=1
-            else:
-                count+=1
+            with open(path, 'r') as raw_file:
+                reader = records.RecordsReader(raw_file)
+                for record in reader:
+                    entity_proto = entity_pb.EntityProto(contents=record)
+                    entity = datastore.Entity.FromPb(entity_proto)
+                    if header_list is None:
+                        header_list = parseHeaderFields(entity)
+                        display_header_list = ['key']
+                        display_header_list.extend(header_list)
+                        writeFn(write_file, entity, display_header_list)
+                    csv_row = entity2csvRow(header_list, entity)
+                    writeFn(write_file, entity, csv_row)
+                    count+=1
     time_capture.end(count)
     print '    ...converted {count:d} objects of type {obj_type} in {run_time:.2f} seconds | {ms_per_obj:.2f} ms/obj | total time = {total_time:.2f} seconds'.format(count=count, obj_type=table_name, run_time=time_capture.run_time, ms_per_obj=time_capture.ms_per_obj, total_time=time_capture.total_time)
     return time_capture
