@@ -2,6 +2,8 @@
 
 #
 # Reads data from a Google App Engine backup and exports it to a CSV file
+# to stop all process
+# kill -TERM -$(pgrep -o python)
 #
 
 import sys
@@ -142,6 +144,25 @@ def process(output_dir, time_capture, table_tuple, writeFn):
     with open(join(output_dir, table_name + '.csv'), 'w') as write_file:
         write_file = csv.writer(write_file)
         # read files, process, and write
+        #print 'filenames',filenames
+        #print "______________________ extract for ", table_name, ' ______________'
+        header_list = []
+        display_header_list = ['key']
+        for filename in filenames:
+            path = join(root, filename)
+            with open(path, 'r') as raw_file:
+                reader1 = records.RecordsReader(raw_file)
+                for record in reader1:
+                    entity_proto1 = entity_pb.EntityProto(contents=record)
+                    entity1 = datastore.Entity.FromPb(entity_proto1)
+                    headers = parseHeaderFields(entity1)
+                    for header in headers:
+                        if len(headers) > len(header_list):
+                            header_list = headers
+                            #print 'header_list=',header_list
+        display_header_list.extend(header_list)
+        #print "header_list", header_list
+        writeFn(write_file, None, display_header_list)
         for filename in filenames:
             path = join(root, filename)
             with open(path, 'r') as raw_file:
@@ -180,12 +201,14 @@ def displayResults(results, total_time):
     types = len(results)
     total_count = sum([result.count for result in results])
     total_run_time = sum([result.run_time for result in results])
+    total_count = total_count or 1
     avg_ms_per_obj = total_run_time * 1000 / total_count
     print 'Converted {types:d} types with a total of {count:d} objects | total running time = {run:.2f} seconds | {rate:.2f} ms/obj | total time = {total:.2f} seconds'.format(types=types, count=total_count, run=total_run_time, rate=avg_ms_per_obj, total=total_time)
 
 def main():
     input_dir, output_dir = getDirs()
     table_list = listFiles(input_dir)
+    print "found ",table_list
 
     concurrency = cpu_count()
     print 'Using {0:d} Processes'.format(concurrency)
